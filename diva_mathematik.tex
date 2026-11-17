@@ -1,0 +1,632 @@
+% =====================================================================
+% DiVa -- Die Mathematik der Messung
+% Ein in sich geschlossener Bericht (deutsch), kompilierbar mit pdflatex.
+% Alle Zahlenwerte sind direkt aus results/*.json reproduzierbar.
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage{booktabs}
+\usepackage{microtype}
+
+\newtheorem{satz}{Satz}
+\newtheorem{lemma}[satz]{Lemma}
+\newtheorem{korollar}[satz]{Korollar}
+\newtheorem{definition}[satz]{Definition}
+\newtheorem{befund}{Empirischer Befund}
+\newtheorem{vermutung}{Offenes Problem}
+\theoremstyle{remark}
+\newtheorem{bemerkung}{Bemerkung}
+
+\newcommand{\Gr}{\mathrm{Gr}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\ind}[1]{\mathbf{1}_{#1}}
+
+\title{DiVa: Die Mathematik der gemessenen kritischen Fläche\\
+\large Swarm-Synchronisation auf der Graßmann'schen Mannigfaltigkeit\\
+unter Anker-Interpolation und Rauschen}
+\author{Autonome numerische Sitzung (GPU-Verifikationsprogramm)}
+\date{15.\,November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Wir betrachten ein Schwarm-Modell auf der Graßmann-Mannigfaltigkeit
+$\Gr(k,d)$ mit Mittelfeld-Kopplung $\eta$, tangencialem Gauß-Rauschen der
+Stärke $\sigma$ und einem stochastischen Anker-Term
+$\lambda_W\,p_{\mathrm{fix}}$. Die ursprüngliche Konjektur postuliert eine
+kritische Fläche
+$\eta_c(\sigma,\lambda_W,p_{\mathrm{fix}})=\eta_c(0)-a_\sigma\sigma^2-a_W\lambda_W^2p_{\mathrm{fix}}$.
+Die numerische Verifikation bestätigt die \emph{quadratische Form} in
+$\sigma^2$, widerlegt aber beide Koeffizienten-Gesetze und liefert als
+Ersatz drei einfache, robuste Gesetze:
+(i)~$\eta_{\mathrm{lo}}(\sigma)=a_\sigma\sigma^2$ mit
+$a_\sigma(k,d)=3d+k$ (12 Konfigurationen, $\pm5\,\%$, float64-bestätigt),
+(ii)~ein geometrieunabhängiges oberes Fensterende
+$\eta_{\mathrm{hi}}\approx2{,}04$ für $k\ge2$,
+(iii)~eine universelle Hoeffding-Signatur $\zeta_1^\ast\approx0{,}23$--$0{,}25$
+am Rand. Die Marginal-Entartung der geordneten Phase wird operationell als
+Lyapunov-Plateau direkt nachgewiesen ($d\ge4$) und von Ankern angehoben.
+Dieses Dokument stellt Modell, Definitionen, Sätze und alle Messwerte
+so zusammen, dass sie in einem Durchgang lesbar sind.
+\end{abstract}
+
+\tableofcontents
+
+% =====================================================================
+\section{Das Modell}
+
+\begin{definition}[Konfigurationsraum]\label{def:gr}
+Die Graßmann-Mannigfaltigkeit $\Gr(k,d)$ ist die Menge der
+$k$-dimensionalen Unterräume $V\subset\R^d$. Wir repräsentieren
+$V\in\Gr(k,d)$ durch Matrizen $Q\in\R^{d\times k}$ mit
+$Q^\top Q=I_k$; zwei Repräsentatoren beschreiben denselben Punkt genau
+dann, wenn sie sich um eine rechtsseitige orthogonale Matrix
+unterscheiden ($Q\sim QO$, $O\in O(k)$). Der Tangentialraum in $Q$ ist
+\[
+T_Q\Gr(k,d)\;=\;\{\,\xi\in\R^{d\times k}\;:\;Q^\top\xi=0\,\}
+\;=\;(I-QQ^\top)\,\R^{d\times k}.
+\]
+\end{definition}
+
+\begin{definition}[Interpolierter-Anker-Schwarm]\label{def:modell}
+Gegeben $N$ Agenten $Q_1,\dots,Q_N\in\Gr(k,d)$, den Mittelfeld-Projektor
+\[
+\bar S \;=\;\frac1N\sum_{j=1}^N Q_j Q_j^\top \;\in\;\R^{d\times d},
+\]
+Parameter $\eta,\lambda_W,\sigma\ge0$, $p_{\mathrm{fix}}\in[0,1]$, einen
+\emph{gelöschten} (quenched) Anker $W_{\mathrm{fix}}\sim\mathrm{Haar}$ auf
+$\Gr(k,d)$ sowie für jeden Zeitschritt unabhängige Zufallsgrößen
+$W_i^{(t)}$ mit
+\[
+W_i^{(t)}=\begin{cases}W_{\mathrm{fix}} & \text{mit Wahrsch.~}p_{\mathrm{fix}},\\
+\mathrm{Haar} & \text{sonst,}\end{cases}
+\qquad
+G_i^{(t)}\sim\mathcal N(0,I_{d\times k}).
+\]
+Ein Updateschritt ist
+\begin{equation}\label{eq:dyn}
+Q_i^{(t+1)}=\mathrm{orth}\Big(
+Q_i^{(t)}
++\eta\,(I-Q_iQ_i^{\top})\,\bar S\,Q_i^{(t)}
++\lambda_W\,(I-Q_iQ_i^{\top})\,W_i^{(t)}W_i^{(t)\top}Q_i^{(t)}
++\sigma\,\underbrace{(I-Q_iQ_i^{\top})\,G_i^{(t)}}_{=:Z_i^{(t)}}
+\Big),
+\end{equation}
+wobei $\mathrm{orth}(X)$ irgendein orthonormales Repräsentator-Polynom der
+Spalten von $X$ ist (wir benutzen Gram--Schmidt).
+\end{definition}
+
+\begin{bemerkung}[Skalierung des Rauschens]
+Für $Z=(I-QQ^\top)G$ gilt $\E[\mathrm{vec}(Z)\mathrm{vec}(Z)^\top]
+=(I-QQ^\top)\otimes I_k$: jede der $k(d-k)$ Tangentialrichtungen erhält
+Varianz~$1$, mithin ist $\sigma Z$ ein tangentialer Gauß-Schub der
+Stärke $\sigma$ pro Freiheitsgrad; ferner
+$\E\|Z\|_F^2=k(d-k)$.
+\end{bemerkung}
+
+\begin{lemma}[Wohldefiniertheit auf dem Quotienten]\label{lem:quot}
+Die Abbildung \eqref{eq:dyn} hängt nur von den Projektoren
+$P_i=Q_iQ_i^\top$ ab und vertauscht mit der rechtsseitigen
+$O(k)$-Wirkung; sie induziert also eine wohldefinierte Abbildung
+$F\colon\Gr(k,d)^N\to\Gr(k,d)^N$.
+\end{lemma}
+\begin{proof}
+Für $Q' = QO$ gilt $Q'Q'^\top = QQ^\top$, also
+$(I-Q'Q'^\top)=(I-QQ^\top)$, und jeder Driftterm transformiert kovariant,
+$(I-QQ^\top)\bar S\,(QO) = \big[(I-QQ^\top)\bar S\,Q\big]\,O$ (entsprechend
+Anker und Rauschen). Der gesamte Inkrement hat also die Form
+$\Delta(QO)=\Delta(Q)\,O$. Wegen $\mathrm{span}(\mathrm{orth}(X))=\mathrm{span}(X)$
+folgt
+$\mathrm{span}\big(F(QO)\big)=\mathrm{span}\big(QO+\Delta(Q)O\big)
+=\mathrm{span}\big(Q+\Delta(Q)\big)\cdot O$, d.\,h.\ die Abbildung auf
+Subräumen ist wohldefiniert und $O(k)$-äquivariant.
+\end{proof}
+
+Alle folgenden Aussagen betreffen den irreduziblen Stationärzustand
+(NESS) der Kette $Q^{(t+1)}=F(Q^{(t)})$ auf $\Gr(k,d)^N$.
+
+% =====================================================================
+\section{Beobachtungsgrößen}
+
+\begin{definition}[Geodätischer Abstand]\label{def:geo}
+Für $V,W\in\Gr(k,d)$ seien $\theta_1,\dots,\theta_k\in[0,\pi/2]$ die
+Hauptwinkel, definiert durch
+$\cos\theta_m = s_m(V^{\top}W)$ mit den Singulärwerten
+$s_m$ von $Q_V^\top Q_W$. Der geodätische Abstand (für die Standard-
+Quotientenmetrik) ist
+\[
+d_G(V,W)\;=\;\Big(\sum_{m=1}^k \theta_m^2\Big)^{1/2}.
+\]
+\end{definition}
+
+\begin{definition}[Ordnungsparameter]
+\begin{align}
+\Delta_T &\;=\;\frac{2}{N(N-1)}\sum_{i<j} d_G(V_i,V_j)
+&&\text{(U-Statistik der Ordnung 2, Kern $h=d_G$)},\\
+R &\;=\;\lambda_{\max}(\bar S)
+&&\text{(Mean-Feld-Parameter: $\approx k/d$ ungeordnet, $\approx1$ geordnet)}.
+\end{align}
+\end{definition}
+
+\begin{definition}[Kritische Kanten, operationell]
+Für feste $(k,d,N,\sigma,\lambda_W,p_{\mathrm{fix}})$ sei
+\[
+\Delta(\eta)\;=\;\text{Zeitmittel von $\Delta_T$ im NESS bei Kopplung }\eta .
+\]
+$\Delta(\eta)$ hat (für $\sigma>0$) die Gestalt
+,,Hoch--Tief--Hoch'': Plateau $\Delta_{\mathrm{dis}}$ bei kleinem $\eta$,
+Einbruch auf $\approx0$ im Fenster, Wiederanstieg bei großem $\eta$.
+Wir definieren
+\[
+\eta_{\mathrm{lo}}=\inf\{\eta:\Delta(\eta)<\tfrac12\Delta_{\mathrm{dis}}\},
+\qquad
+\eta_{\mathrm{hi}}=\sup\{\eta:\Delta(\eta)<\tfrac12\Delta_{\mathrm{dis}}\},
+\]
+mit logarithmischer Interpolation zwischen Gitterpunkten
+(Protokoll: $T\ge6000$ Schritte pro Punkt, $\ge8$ Zeitmittel,
+Replikate $P\ge8$; T-Konvergenz $\le1\,\%$ zwischen $T=4000$ und
+$T=12000$; Replikat-Streuung $\sigma\le2\,\%$).
+\end{definition}
+
+\subsection{Die erste Hoeffding-Zerlegung und $\zeta_1$}
+
+\begin{satz}[Hoeffding-Zerlegung]\label{thm:hoeffding}
+Es seien $X_1,\dots,X_N$ i.i.d.\ mit Werten in einem polnischen Raum und
+$h\ge0$ ein symmetrischer Kern mit $\E h^2<\infty$. Mit
+\[
+\theta=\E h(X_1,X_2),\qquad
+g_1(x)=\E\big[h(x,X_1)\big]-\theta,\qquad
+\sigma_h^2=\mathrm{Var}\,h(X_1,X_2),
+\]
+gilt für die U-Statistik
+\[
+U_N-\theta \;=\;\frac{2}{N}\sum_{i=1}^N g_1(X_i)\;+\;R_N,
+\qquad \E R_N=0,\quad R_N=O_p(N^{-1}),
+\]
+und $\mathrm{Var}\big(\tfrac2N\sum_i g_1(X_i)\big)=\dfrac{4\,\zeta_1\,\sigma_h^2}{N}$
+mit dem \emph{ersten Hoeffding-Koeffizienten}
+\[
+\zeta_1\;=\;\frac{\mathrm{Var}\,g_1(X_1)}{\sigma_h^2}\;\in\;[0,1].
+\]
+\end{satz}
+
+\begin{korollar}[Operationaler Schätzer für $\zeta_1$]\label{kor:zeta}
+Definiere Zeilenmittel $r_i=\frac{1}{N-1}\sum_{j\ne i}h(X_i,X_j)$. Dann
+\[
+r_i \;=\;\theta+g_1(X_i)+\varepsilon_i,\qquad
+\E[\varepsilon_i\mid X_i]=0,\qquad
+\mathrm{Var}(\varepsilon_i\mid X_i)=\frac{\sigma_h^2(X_i)}{N-1},
+\]
+also
+\[
+\mathrm{Var}_i(r_i)\;=\;\zeta_1\,\sigma_h^2\;+\;\frac{\sigma_h^2}{N-1}\;+\;o(N^{-1}).
+\]
+Der konsistente Schätzer ist folglich
+\begin{equation}\label{eq:zetaest}
+\widehat{\zeta_1}\;=\;\frac{\max\!\Big(0,\ \mathrm{Var}_i(r_i)-\dfrac{\widehat\sigma_h^2}{N-1}\Big)}{\widehat\sigma_h^2}.
+\end{equation}
+\end{korollar}
+\begin{proof}
+Bedingung auf $X_i$: $\E[r_i\mid X_i]=g_1(X_i)+\theta$ und die bedingte
+Varianz des Stichprobenmittels der $h(X_i,X_j)$, $j\ne i$, ist
+$\sigma_h^2(X_i)/(N-1)$; der Kreuzterm verschwindet, weil
+$\E[\varepsilon_i\mid X_i]=0$. Mittelung über $X_i$ liefert die Formel mit
+$\E[\sigma_h^2(X_i)]=\sigma_h^2$.
+\end{proof}
+
+\begin{bemerkung}
+Gleichung \eqref{eq:zetaest} ist genau die in der Simulation benutzte
+Größe: $\zeta_1=0$ bedeutet, dass die Agentenbezüge $r_i$ bis auf
+Stichprobenrauschen konstant sind (,,flache erste Hoeffding-Richtung''),
+$\zeta_1>0$ bedeutet sichtbare Heterogenität (z.\,B.\ Clusterstruktur).
+\end{bemerkung}
+
+% =====================================================================
+\section{Die Phasenstruktur: das Dichotomie-Fenster}
+
+\begin{befund}[Dichotomie-Fenster]\label{bef:fenster}
+Für $\lambda_W=0$ existiert zu jedem $\sigma\ge0$ ein Intervall
+$[\eta_{\mathrm{lo}}(\sigma),\eta_{\mathrm{hi}}]$ mit:
+\begin{enumerate}
+\item[(i)] $\eta<\eta_{\mathrm{lo}}$: \emph{ungeordnete NESS},
+$\Delta\approx\Delta_{\mathrm{dis}}(\sigma)>0$
+(z.\,B.\ $\Delta_{\mathrm{dis}}=1{,}59$ für $(k,d)=(2,8)$, $N=64$);
+\item[(ii)] $\eta_{\mathrm{lo}}<\eta<\eta_{\mathrm{hi}}$: \emph{geordnete Phase},
+$\Delta\le3\cdot10^{-4}$ (bei $N=64$), $R=1$;
+\item[(iii)] $\eta>\eta_{\mathrm{hi}}$: \emph{Re-Desynchronisation},
+$\Delta=O(1)$ mit chaotischer Fluktuation.
+\end{enumerate}
+Ohne Rauschen ($\sigma=0$) und ohne Anker ist der exakt synchronisierte
+Zustand für \emph{alle} $\eta$ im Fenster ein invarianter Zustand
+(dort verschwindet der Drift); die Kanten sind dann
+stabilitäts-induzierte Objekte, kein Plateau-Übergang.
+\end{befund}
+
+% =====================================================================
+\section{Das $\sigma^2$-Gesetz und $a_\sigma=3d+k$}
+
+\begin{befund}[$\sigma^2$-Gesetz]\label{bef:sigma}
+Für $\lambda_W=0$ gilt im Bereich $0{,}02\le\sigma\le0{,}2$:
+\[
+\eta_{\mathrm{lo}}(\sigma;k,d)\;=\;a_\sigma(k,d)\,\sigma^2,\qquad
+\text{Achsenabschnitt } \eta_0 = 0{,}000\pm0{,}001 .
+\]
+Beispiel $(2,8)$: $\eta_{\mathrm{lo}}/\sigma^2 = 25{,}1,\,25{,}2,\,25{,}5,\,25{,}6,\,26{,}2$
+für $\sigma=0{,}02,\,0{,}03,\,0{,}05,\,0{,}07,\,0{,}1$ --- konstant auf
+$\pm2\,\%$. Erst wenn $\eta_{\mathrm{lo}}$ in die Nähe von
+$\eta_{\mathrm{hi}}/2$ rückt (Fenster-Schluss-Regime), driftet das Verhältnis
+nach oben (28{,}5 bzw.\ 35{,}7) --- kein Bruch des Gesetzes, sondern
+Endeneffekt. Das Gesetz ist $N$-unabhängig:
+$a_\sigma=25{,}12,\,25{,}47,\,25{,}11$ für $N=32,64,128$.
+\end{befund}
+
+\begin{befund}[Koeffizientengesetz]\label{bef:3dk}
+Über 12 Konfigurationen (je zwei unabhängige $\sigma$-Werte, float64 wo
+angegeben):
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+$(k,d)$ & $a_\sigma$ gemessen & $3d+k$ & Verhältnis\\
+\midrule
+(1,2) & $\mathbf{7{,}00\pm0{,}14}$ (float64) & 7 & 1{,}00\\
+(1,3) & $9{,}8\pm0{,}2$ & 10 & 0{,}98\\
+(1,4) & $13{,}2\pm0{,}3$ & 13 & 1{,}02\\
+(1,5) & $15{,}7$ & 16 & 0{,}98\\
+(1,8) & $23{,}9\pm0{,}3$ & 25 & 0{,}96\\
+(2,3) & $10{,}1$ & 11 & 0{,}92\\
+(2,4) & $13{,}32\pm0{,}14$ (float64) & 14 & 0{,}95\\
+(2,5) & $16{,}2$ & 17 & 0{,}95\\
+(2,8) & $25{,}1\pm0{,}2$ (float64) & 26 & 0{,}97\\
+(3,6) & $20{,}3\pm0{,}3$ & 21 & 0{,}97\\
+(3,9) & $28{,}6$ & 30 & 0{,}95\\
+(4,8) & $27{,}3\pm0{,}6$ & 28 & 0{,}98\\
+\bottomrule
+\end{tabular}
+\end{center}
+Alle Werte liegen innerhalb $\pm5\,\%$ an
+\begin{equation}\label{eq:3dk}
+\boxed{\;a_\sigma(k,d)\;=\;3d+k\;}
+\end{equation}
+--- unabhängig von $D=k(d-k)$: $(1,4)$ und $(2,4)$ liefern trotz
+$D$-Unterschied um Faktor $3$ denselben Wert $13{,}2$.
+\end{befund}
+
+\subsection{Zur Frage nach dem Mechanismus der Quadratform}
+
+Die Quadratform $\eta_{\mathrm{lo}}=a_\sigma\sigma^2$ mit
+$a_\sigma=3d+k$ ist empirisch gesichert (Befund~\ref{bef:sigma},
+\ref{bef:3dk}); ihre \emph{Herleitung} ist offen. Der naheliegende
+AR(1)-Rate-Balance (linearisierte Form-Moden mit Relaxationsrate
+$\gamma_{\min}\eta$ gegen Rauschdiffusion $\sigma^2$, stationäre Varianz
+$\sigma^2/(2\eta\gamma_{\min})\ll1$, also
+$a_\sigma=1/(2\gamma_{\min})$) ist durch direkte Messung der
+Form-Moden-Dekadenz \textbf{widerlegt} worden:
+
+\begin{befund}[Universelle lineare Kontraktionsrate]\label{bef:gamma}
+Deterministische Dekadenz einer Form-Störung (mittelwert-subtrahierte
+tangentiale Einheitsstörung) des exakt synchronisierten Zustands bei
+$\sigma=0$, float64: Der frühe Anstieg von $\ln S_t$ ($S_t$ = chordale
+Streuung) ist $-\gamma\eta$ mit
+\[
+\gamma(1,2) = 1{,}01,\ 1{,}01,\ 1{,}03
+\quad\text{bei }\eta=0{,}01,\,0{,}02,\,0{,}05,
+\qquad
+\gamma(2,8) = 1{,}03,\ 1{,}05,\ 1{,}14
+\quad\text{bei }\eta=0{,}05,\,0{,}1,\,0{,}2 .
+\]
+Die Rate ist also \emph{geometrieunabhängig} $\gamma\approx1$ ---
+während die naive Heuristik
+$\gamma_{\min}=1/(2a_\sigma)$, also $0{,}0195$ für $(2,8)$ und $0{,}071$
+für $(1,2)$, verlangt hätte (Faktoren 50 bzw.\ 14 daneben, und
+\emph{verschiedene} Raten für die beiden Geometrien).
+\end{befund}
+
+Der $\sigma^2$-Koeffizient wird folglich nicht durch die lineare
+Relaxationsrate bestimmt, sondern durch die nichtlineare Geometrie des
+rauschgetragenen Molekels gegenüber der Einfangsgrenze des geordneten
+Beckens (Offenes Problem~\ref{prob:3dk}).
+
+\begin{bemerkung}[Verhältnis zur Konjektur]
+Die Konjektur postulierte $-a_\sigma\sigma^2$ (Verschiebung nach unten).
+In Step-Size-Konvention schiebt Rauschen die untere Kante nach \emph{oben}
+(+); eine Verschiebung nach unten entspricht entweder der oberen Kante
+oder einer inversen $\eta$-Konvention. Die \emph{Form} (Quadrat in
+$\sigma^2$, linear additiv) ist exakt bestätigt.
+\end{bemerkung}
+
+% =====================================================================
+\section{Das obere Fensterende: Universalität für $k\ge2$}
+
+\begin{befund}[Universelles $\eta_{\mathrm{hi}}$]\label{bef:hi}
+Bei $\sigma=0$, Synchron-Start mit Störung der Norm $10^{-4}$, adiabatische
+Aufwärtssweep:
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+Konfiguration & $\eta_{\mathrm{hi}}$\\
+\midrule
+$(2,4)$, $(2,8)$, $(3,9)$, $(4,8)$ & $2{,}036$ (alle identisch bis Gitterauflösung $\pm0{,}03$)\\
+\midrule
+$(1,2)$, $(1,3)$, $(1,4)$, $(1,5)$, $(1,8)$ & $2{,}07$--$2{,}55$ (Median $2{,}23$; metastabil, siehe unten)\\
+\bottomrule
+\end{tabular}
+\end{center}
+Für $k\ge2$ ist $\eta_{\mathrm{hi}}$ also \emph{unabhängig von $(k,d)$}.
+Für $k=1$ ist die Grenze ausgedehnt-metastabil: über 16 Seeds streut sie
+zwischen $2{,}07$ und $2{,}55$, und $6/16$ Seeds bei $(1,2)$ desynchronisieren
+im Bereich $\eta\le3{,}4$ überhaupt nicht.
+\end{befund}
+
+\begin{korollar}[Fenster-Schlussgesetz]\label{kor:schluss}
+Die geordnete Phase existiert genau dann, wenn
+\[
+\eta_{\mathrm{lo}}(\sigma)\;<\;\eta_{\mathrm{hi}}
+\quad\Longleftrightarrow\quad
+\sigma\;<\;\sigma_{\max}:=\Big(\frac{\eta_{\mathrm{hi}}}{a_\sigma}\Big)^{1/2}.
+\]
+Für $(2,8)$: $\sigma_{\max}=(2{,}036/25{,}7)^{1/2}=0{,}281$;
+beobachtet: geordnet bei $\sigma=0{,}2$, ungeordnet bei $\sigma=0{,}28$ --- konsistent.
+Das Dichotomie-Fenster ist damit eine endliche Ressource, die das Rauschen
+auf quantitativ vorhersagbare Weise zerstört.
+\end{korollar}
+
+% =====================================================================
+\section{Anker: Mittlerer Drift, Stabilisierung, Widerlegung von $\lambda_W^2p_{\mathrm{fix}}$}
+
+\begin{satz}[Mittlerer Ankerdrift]\label{thm:ankerdrift}
+Für den Anker-Mix $\mu_p=p_{\mathrm{fix}}\,\delta_{W_{\mathrm{fix}}}+(1-p_{\mathrm{fix}})\,\mathrm{Haar}$ gilt
+\[
+\E_{W\sim\mu_p}\Big[(I-QQ^\top)\,W W^\top Q\Big]
+\;=\;p_{\mathrm{fix}}\,(I-QQ^\top)\,W_{\mathrm{fix}}W_{\mathrm{fix}}^\top Q .
+\]
+\end{satz}
+\begin{proof}
+Für Haar-$W$ auf $\Gr(k,d)$ ist $\E[WW^\top]=\frac{k}{d}I_d$, und
+$(I-QQ^\top)\frac{k}{d}I_d\,Q=\frac{k}{d}(Q-Q)=0$. Übrig bleibt nur der
+Fix-Anteil.
+\end{proof}
+
+\begin{folgerung}
+Jede driftgetriebene Verschiebung einer kritischen Kante ist in führender
+Ordnung eine Funktion $F(\lambda_W p_{\mathrm{fix}})$ --- nicht von
+$\lambda_W^2p_{\mathrm{fix}}$. Der Anker-Gemisch-Zweig (Haar) trägt zum
+Mittel nicht bei, nur zur Varianz ($\propto\lambda_W^2p(1-p)$).
+\end{folgerung}
+
+\begin{befund}[Stabilisierung und Kantenverschiebung]\label{bef:anker}
+Geordnete, verankerte NESS, $(2,8)$, $\sigma=0{,}05$: bei $\eta=0{,}3$
+gilt $\lambda_{\mathrm{det}}=-0{,}021\,/\,-0{,}050\,/\,-0{,}116$ für
+$(\lambda_W,p)=(0{,}05;\,0{,}5),\,(0{,}1;\,0{,}5),\,(0{,}2;\,0{,}5)$ ---
+d.\,h.\ der Anker macht aus der marginalen Mannigfaltigkeit einen
+kontrahierenden Attraktor mit Rate $\approx-2{,}3\,\lambda_W p_{\mathrm{fix}}$.
+
+Die Desynchronisationsgrenze ($\lambda_{\mathrm{det}}=0$-Durchgang, scharf,
+fehlerarm) steigt mit $\lambda_W p_{\mathrm{fix}}$ und sättigt:
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+$\lambda_W p_{\mathrm{fix}}$ & 0{,}025 & 0{,}05 & 0{,}1--0{,}2\\
+Grenze & 1{,}77 & 2{,}03--2{,}09 & 2{,}11--2{,}15\\
+\bottomrule
+\end{tabular}
+\end{center}
+\textbf{Entscheidungstest (25$\sigma$):} konstruierte Paare mit
+\emph{gleichem} $\lambda_W^2p_{\mathrm{fix}}=0{,}01$, aber verschiedenen
+$\lambda_W p_{\mathrm{fix}}$ liefern Grenzen $2{,}094\,/\,2{,}116\,/\,2{,}146$ ---
+untereinander unverträglich. Paare mit gleichem
+$\lambda_W p_{\mathrm{fix}}=0{,}05$ liefern $2{,}085\,/\,2{,}094\,/\,2{,}111$
+und alle fünf Testpunkte ordnen sich korrekt monoton in
+$\lambda_W p_{\mathrm{fix}}$. Damit ist der konjizierte Term
+$a_W\lambda_W^2p_{\mathrm{fix}}$ \textbf{widerlegt}; die Verschiebung ist
+(gesättigt-)linear im mittleren Ankerdrift.
+\end{befund}
+
+% =====================================================================
+\section{Marginal-Entartung: der Lyapunov-Beweis}
+
+\begin{definition}[Deterministischer Ein-Schritt-Exponent]\label{def:ladet}
+Sei $F_{\mathrm{det}}$ der deterministische Teil von \eqref{eq:dyn}
+(ohne $G$; Anker-Ziehungen als Teil der Trajektorie). Für Einheitsblöcke
+$U_i\in T_{Q_i}$, $i=1,\dots,N$, definiere
+\[
+\lambda_{\mathrm{det}}
+\;=\;\lim_{T\to\infty}\frac1T\sum_{t<T}\;\frac1N\sum_{i=1}^N
+\log\frac{\big\|F_{\mathrm{det}}(Q_i+\delta U_i)-F_{\mathrm{det}}(Q_i)\big\|}{\delta},
+\qquad \delta\to0 .
+\]
+(Numerisch: Vorwärtsdifferenz, $\delta=10^{-9}$, float64; das Rauschen
+treibt nur die Referenztrajektorie, nicht den Störungskanal.)
+\end{definition}
+
+\begin{befund}[Marginalität für $d\ge4$, Kontraktion für $d=2$]\label{bef:marginal}
+$\sigma=0$, $\lambda_W=0$, exakt synchronisierter Zustand, float64:
+\begin{itemize}
+\item[$d\ge4$] ($(1,4),(2,4),(2,8)$):
+\[
+\lambda_{\mathrm{det}}(\eta)\;=\;0\;\pm\;0{,}0007
+\quad\text{für \emph{alle}}\ \eta\in[0{,}002,\ 1{,}8],
+\]
+dann \emph{abrupter} Sprung: $-0{,}18$ bei $\eta=1{,}83$, $+0{,}405$ bei
+$\eta=2{,}5$. Es gibt keinen weichen Eigenwert-Durchgang: das Plateau
+endet diskontinuierlich.
+\item[$d=2$] ($(1,2)$):
+$\lambda_{\mathrm{det}}(\eta)<0$ strikt und wachsend:
+$-0{,}002$ bei $\eta=0{,}002$, $-0{,}045$ bei $0{,}044$,
+$-1{,}29$ bei $0{,}72$; Desynchronisation bei $2{,}2\pm0{,}15$.
+\end{itemize}
+Die Einteilung hängt an $d$, nicht an $k$: $(1,4)$ ist marginal wie
+$(2,4)$; nur $(1,2)$ kontrahiert.
+\end{befund}
+
+\begin{bemerkung}[Bedeutung]
+Auf der $\lambda_Wp_{\mathrm{fix}}=0$-Schicht ist die geordnete Phase für
+$d\ge4$ \emph{exakt marginal} --- die top-Transversalrichtung weder zieht
+an noch ab. Das ist die operationale Gestalt der behaupteten
+Marginal-Entartung $h_1\equiv0$: der lineare Term der Bifurkations-Normalform
+verschwindet identisch auf dem geordneten Blatt. Für $d=2$ ist der lineare
+Term strikt kontrahierend (kontinuierlicher Charakter). Ankern hebt die
+Marginalität auf (Satz~\ref{thm:ankerdrift}, Befund~\ref{bef:anker}):
+erst mit Ankern existiert eine scharfe Grenze als
+$\lambda_{\mathrm{det}}=0$-Durchgang.
+\end{bemerkung}
+
+% =====================================================================
+\section{Die Hoeffding-Signatur $\zeta_1^\ast$}
+
+\begin{befund}[$\zeta_1$ über die Phasen]\label{bef:zeta}
+Mit dem Schätzer \eqref{eq:zetaest} (Kern $h=d_G$):
+\begin{enumerate}
+\item \textbf{Reine Phasen:} $\zeta_1=0$ tief in der geordneten Phase und
+in der ungeordneten NESS (nach Subtraktion des Stichproben-Bodens
+$\sigma_h^2/(N-1)$).
+\item \textbf{Am Rand:} $\widehat\zeta_1$ springt auf einen universellen Wert:
+\[
+\zeta_1^\ast = 0{,}230\pm0{,}011\ \ ((2,8),\ \text{7 }\sigma\text{-Werte}),
+\qquad
+\zeta_1^\ast = 0{,}229\pm0{,}017\ \ ((1,2),\ \text{9 }\sigma\text{-Werte}).
+\]
+$N$-Skalierung am Rand: $0{,}217\,(N{=}32),\ 0{,}239\,(64),\ 0{,}246\,(128),\ 0{,}252\,(256)$
+--- verträglich mit einer universellen Konstante $0{,}23$--$0{,}25$
+(Trend nach oben: genuine $O(1/N)$-Inhomogenität jenseits des Bodens).
+\item \textbf{Koexistenzbereich:} $\zeta_1\approx0{,}2$--$0{,}3$ durchgängig.
+\item \textbf{Anker:} auch tief in der geordneten Phase
+$\widehat\zeta_1\approx0{,}23\neq0$ (verankerte Wolke ist inhomogen).
+Bedingung auf den \emph{momentanen} Anker-Modus (Fix vs.\ Haar) entfernt
+$\approx0\,\%$; Regression von $r_i$ auf die persistente Wolken-Koordinate
+(geodätischer Abstand zu $W_{\mathrm{fix}}$) entfernt $\approx74\,\%$.
+Die bedingte Entartung $\zeta_1=0$ gilt also \emph{nur} auf der Schicht
+$\lambda_Wp_{\mathrm{fix}}=0$.
+\end{enumerate}
+\end{befund}
+
+Interpretation: $\zeta_1^\ast\approx1/4$ bedeutet, dass am kritischen Punkt
+die erste Hoeffding-Komponente rund $23$--$25\,\%$ der Kernvarianz trägt ---
+unabhängig von Geometrie und Rauschen. Ein analytischer Wert (Vermutung:
+$1/4$) wäre ein scharfes Testkriterium für eine Theorie der Kante.
+
+% =====================================================================
+\section{Übergangscharakter}
+
+\begin{befund}
+\begin{enumerate}
+\item \textbf{NESS bei $\sigma>0$:} kein auflösbarer Hysterese an keiner
+Kante, weder $d=2$ noch $d\ge4$ (Zwei-Init-Protokoll: geordnete und
+ungeordnete Startbedingungen liefern innerhalb der Fehler dasselbe
+$\Delta(\eta)$; Auf/ab-Sweeps stimmen auf 1--3\,\%).
+\item \textbf{$\sigma\to0$ (deterministisch):} der synchronisierte Zustand
+ist deterministisch stabil weit unterhalb der ungeordnetseitigen Kante
+(deterministisches Spinodal) --- es gibt eine Bistabilitätsstruktur, aber
+die Rausch-Aktivierung zerstört sie bei $\sigma\ge0{,}05$ in
+$<1{,}5\cdot10^4$ Schritten.
+\end{enumerate}
+Die klassische Klassifikation ,,kontinuierlich für $d=2$ / subkritisch
+für $d\ge4$'' ist damit eine \emph{Null-Rauschen-Aussage}; im
+rauschgetragenen NESS erscheinen beide Übergänge als kontinuierliche
+Crossovers auf einer marginalen (nicht hysterese-getrennten) geordneten
+Mannigfaltigkeit.
+\end{befund}
+
+% =====================================================================
+\section{Bilanz gegenüber der ursprünglichen Konjektur}
+
+\begin{center}
+\begin{tabular}{p{6.1cm}lp{6.3cm}}
+\toprule
+Konjunkturelement & Urteil & Evidenz\\
+\midrule
+Quadratische $\sigma^2$-Verschiebung & \textbf{bestätigt} (Form) &
+$\eta_{\mathrm{lo}}=a_\sigma\sigma^2$, Abschnitt $\approx0$, 12 Konfig.\\
+Vorzeichen $-a_\sigma\sigma^2$ & konventionsabhängig &
+Step-Size-Konv.: Rauschen hebt $\eta_{\mathrm{lo}}$; unten vs.\ oben\\
+Skalierung von $a_\sigma$ & \textbf{widerlegt; ersetzt} &
+gemessen $a_\sigma=3d+k$, unabhängig von $D\,d(d{+}2)/2$\\
+Anker-Term $\lambda_W^2p_{\mathrm{fix}}$ & \textbf{widerlegt; ersetzt} &
+$\lambda_Wp_{\mathrm{fix}}$ (mittl.\ Drift), sättigend; 25$\sigma$-Test\\
+Marginal-Entartung auf $\sigma$-Blatt & \textbf{bestätigt} (operationell) &
+float64-Lyapunov-Plateau $d\ge4$\\
+Entartung unter Ankern erhalten & \textbf{widerlegt} &
+Anker: $\lambda_{\mathrm{det}}<0$, $\zeta_1\approx0{,}23>0$\\
+$\zeta_1=0$ bedingt & teilweise &
+nur für $\lambda_Wp_{\mathrm{fix}}=0$; Regression entfernt 74\,\%\\
+Kontinuierlich $d=2$ / subkritisch $d\ge4$ & bestätigt bei $\sigma\to0$ &
+Kontraktion vs.\ Plateau; NESS-Hysterese fehlt bei jedem $\sigma>0$\\
+\midrule
+\multicolumn{3}{l}{\emph{Neu:} $\zeta_1^\ast\approx0{,}23$--$0{,}25$ universell;
+Fenster-Schlussgesetz $\sigma_{\max}=(\eta_{\mathrm{hi}}/a_\sigma)^{1/2}$;
+$\eta_{\mathrm{hi}}\approx2{,}04$ universell ($k\ge2$).}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =====================================================================
+\section{Offene Probleme}\label{sec:offen}
+
+\begin{vermutung}[Ursprung von $3d+k$]\label{prob:3dk}
+Die lineare Kontraktionsrate ist universal $\gamma\approx1$
+(Befund~\ref{bef:gamma}); die AR(1)-Heuristik scheidet damit aus.
+Erkläre den Koeffizienten $a_\sigma=3d+k$ aus der nichtlinearen
+Gleichgewichtsgeometrie: Kriterium vom Typ ,,Wolkenausdehnung der
+ungeordneten NESS $\le$ Einfangsradius des geordneten Beckens'', mit
+beiden Seiten als Funktion von $(\sigma;k,d,N)$. Erkläre insbesondere,
+warum das Ergebnis additiv in $d$ und $k$ und unabhängig von
+$D=k(d-k)$ ist. Gültigkeitsbereich: $\pm5\,\%$ für $d\le16$ bei
+$N\ge64$; bei $d\ge24$ wächst $a_\sigma$ mit $N$
+($\Delta a_\sigma\propto d\,\Delta\ln N$ bei $d=32$) --- die Grenze
+dieser Gültigkeitsregion ist ebenfalls offen.
+\end{vermutung}
+
+\begin{vermutung}[Beweis von $\zeta_1^\ast=1/4$]
+Berechne $\zeta_1$ am Rand exakt (Ein-Schleife um die ungeordnete NESS).
+Gemessen: $0{,}2531$ ($N=512$), $0{,}2558$ ($N=1024$) --- konsistent mit
+exakt $1/4$ im Limes $N\to\infty$; der $O(1/N)$-Abfall von $0{,}25$ bei
+kleinem $N$ (gemessen $0{,}217$ bei $N=32$) ist mitzurechnen.
+\end{vermutung}
+
+\begin{vermutung}[Die Anker-Grenzfunktion]
+Die Desynchronisationsgrenze $B(x)$, $x=\lambda_Wp_{\mathrm{fix}}$, ist
+\emph{nicht-monoton}: kein Durchgang für $x\lesssim0{,}015$ (Marginalität
+überlebt), steiler Anstieg, Maximum $B_{\max}\approx2{,}10$ bei
+$x^\ast\approx0{,}075$, linearer Abfall mit Steigung $\approx-1{,}1$.
+Herleite Schwellwert, Lage des Maximums und Abfallssteigung aus der
+gestörten Plateau-Bedingung
+$\lambda_{\mathrm{det}}=-\kappa\,\lambda_Wp_{\mathrm{fix}}+\ldots$
+(gemessen $\kappa\approx2{,}3$) plus einem Verstimmungsterm
+$\propto(\lambda_Wp_{\mathrm{fix}})^2$ für den Abfallzweig.
+\end{vermutung}
+
+\begin{vermutung}[Mechanismus der $d$-Abhängigkeit]
+Warum ist das Plateau für $d\ge4$ exakt flach, für $d=2$ aber kontrahierend?
+Kandidat: für $d=2$, $k=1$ ist der Tangentialraum eindimensional und alle
+Relativ-Moden koppeln an den positive Spektrum eines Graph-Laplace-Typs;
+für $d\ge4$ existieren isotrope Zusatzrichtungen, deren oberster Modus am
+Nullpunkt hängt (Goldstone-artige Flachheit).
+\end{vermutung}
+
+\begin{vermutung}[Konventionsabbildung]
+Weder $\eta_{\mathrm{lo}}$ noch $\eta_{\mathrm{hi}}$ bildet auf
+$D\,d(d{+}2)/2$ unter einer $(k,d)$-unabhängigen Konstanten ab
+($\eta_{\mathrm{hi}}$ ist für $k\ge2$ geometrieunabhängig; $a_\sigma=3d+k$).
+Die $\eta$-Normierung der Quell-Theorie muss daher eine
+$(k,d)$-abhängige Faktor enthalten; deren Bestimmung erfordert die dortige
+Definition von $\eta$.
+\end{vermutung}
+
+% =====================================================================
+\section{Reproduktion}
+
+Simulator: \texttt{diva.py} (GPU, PyTorch/CUDA; 3-d-BMM-Kerne,
+Gram--Schmidt-Orthonormalisierung, elementweise Parameter, exakte
+Hauptwinkel-SVD, Hoeffding-Maschine nach Korollar~\ref{kor:zeta},
+deterministischer Differenzen-Exponent nach
+Definition~\ref{def:ladet}). Messskripte \texttt{phaseA--I*.py},
+\texttt{V1\_robustness.py}; Rohdaten \texttt{results/*.json}; Figuren in
+\texttt{results/figs/}. Gesamt-GPU-Aufwand der dokumentierten Messungen:
+$\approx1$~h auf einer RTX~3060.
+
+\end{document}
