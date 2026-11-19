@@ -2,6 +2,8 @@
 
 *Stand: 15. November 2026 · Begleitdokument zu `REPORT.md` und `diva_mathematik.tex`*
 
+> **Status-Update (19. November 2026):** Alle fünf unten formulierten Probleme wurden analytisch gelöst und durch unabhängige Verifikationstests bestätigt. Vollständige Herleitungen: **`HERLEITUNG.md`** sowie Abschnitt 12 von **`diva_mathematik.tex`**; reproduzierbares Verifikationsskript: **`verify_theory.py`** (`results/theory_verification.json`).
+
 ---
 
 ## 0. Lagebericht in vier Sätzen

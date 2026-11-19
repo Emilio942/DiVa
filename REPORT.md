@@ -229,3 +229,44 @@ Deterministic shape-mode decay from the exactly synchronized state (float64, mea
 - $(2,8)$: $\gamma = 1.03,\ 1.05,\ 1.14$ at $\eta=0.05/0.1/0.2$.
 
 **$\gamma\approx1$, geometry-independent.** The naive AR(1) rate balance would require $\gamma_{\min}=1/(2a_\sigma)$, i.e. $0.0195$ at $(2,8)$ and $0.071$ at $(1,2)$ — off by factors 50 and 14, and predicts *different* rates for the two geometries. ➜ The quadratic $\sigma^2$-law is **not** a linear-rate phenomenon; its coefficient must emerge from the nonlinear geometry of the noise-sustained cloud versus the ordered basin boundary.
+
+---
+
+## 14. CORRECTIONS (post-derivation, see HERLEITUNG.md + verify_theory.py)
+
+The analytic derivation (`HERLEITUNG.md`) and its verification suite
+(`verify_theory.py`, `results/theory_verification.json`) supersede four statements
+in this report:
+
+1. **F6 / §4 — stabilization rate:** κ = **1.0**, not 2.3 (my earlier value was a
+   misreading of λ_det/x at mixed (λ_W, p) pairs). Data: λ_det/x = 0.83–1.16 ≈ 1.
+2. **F2 / §2 — noise coefficient:** the exact model possesses a Grassmann duality
+   $k \leftrightarrow d-k$ ($P \mapsto I-P$ preserves the interaction energy up to
+   a constant and the geodesic distance exactly). New measurements confirm it
+   ((1,6)≈(5,6), (2,6)≈(4,6), (1,4)≈(3,4), all ±1.1 %), so the law **3d+k** is only
+   the $k\le d/2$ branch; the corrected linear form is
+   $a_\sigma \approx 3d + \min(k, d-k)$, itself a ±5 % linearization of the exact
+   mean-field Boltzmann half-plateau curve $a_{1/2}^{\mathrm{eq}}(k,d)$.
+3. **F7 / §6 — ζ₁ in the ordered phase:** ζ₁ vanishes only at σ = 0 (exact sync).
+   For σ > 0 the agent cloud keeps ζ₁ ≈ 1/4 (scale-invariant in the cloud
+   temperature τ; measured 0.232–0.248 across the ordered window at σ = 0.05).
+   The estimator only reads ≈0 where the cloud term drops below the iid floor.
+4. **§5 / §13 — λ_det estimator artifact:** the finite-difference in
+   `phaseE2.det_step_increment` omits the final retraction orthonormalization,
+   adding a radial stretch ε(η;σ) ≈ c₀σ² + (η²/4)R(1−R) that grows toward η → 2.
+   Part of the "rising branch" of B(x) (and the +0.005 plateau offset) is
+   estimator-level, not physics.
+
+With these corrections the full picture is: the unanchored model is an exact
+overdamped Langevin flow on $\mathrm{Gr}(k,d)^N$ with Gibbs weight
+$\rho \propto e^{\frac{a}{2N}\sum_{i<j}\mathrm{tr}(P_iP_j)}$, $a=\eta/\sigma^2$
+(problem 4 context and F8 explained via Kramers nucleation); the exact one-step
+Jacobian at the synchronized state is $U_i' = (1-\eta)U_i + \eta\bar U$ —
+geometry-independent — which yields F3 ($\lambda = \ln(1-\eta)$), F4
+($\eta_{\mathrm{hi}}=2$, flip bifurcation), and the resolution of the apparent
+$d$-dichotomy (per-agent normalization on $S^{D-1}$; sign freeze at $D=1$);
+the linear Weingarten spinodal of the disordered state is
+$a_{\mathrm{lin}} = \frac{d(d-1)(d+2)}{2D} = \frac{d(d+2)}{2}$ at $k=1$,
+identifying the source-theory constant $D\,d(d{+}2)/2$ as the linear spinodal
+(problem 5). All five open problems from §12 are resolved in
+`HERLEITUNG.md`, with every claimed number reproduced by `verify_theory.py`.

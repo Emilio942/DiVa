@@ -61,6 +61,10 @@ Lyapunov signature.
 │                            #   compiles with pdflatex)
 ├── PROBLEMSTELLUNG.md       # the five open theory problems (German), with time
 │                            #   estimates, entry points and success criteria
+├── HERLEITUNG.md            # complete analytical derivations solving all five
+│                            #   problems (German)
+├── verify_theory.py         # standalone GPU/CPU verification of the analytical
+│                            #   predictions (results/theory_verification.json)
 ├── DiVa                     # raw research log of the autonomous session
 │                            #   (includes raw pipeline output; unpolished)
 └── results/
@@ -109,6 +113,7 @@ python phaseF.py      # conditional zeta1, two-init bistability, extra (k,d)
 python phaseG.py      # float64 spinodals, validity probes
 python V1_robustness.py
 python analysis_final.py
+python verify_theory.py   # analytical derivations & smoking-gun checks (Problems 1–5)
 ```
 
 Results are written to `results/` as JSON.
@@ -118,24 +123,20 @@ Results are written to `results/` as JSON.
 | Document | Language | Content |
 |---|---|---|
 | `REPORT.md` | EN | complete results: 13 sections incl. verification table and verdict per conjecture element |
-| `diva_mathematik.tex` | DE | self-contained mathematical development: model, Hoeffding theorem + estimator proof, empirical theorems, open problems |
-| `PROBLEMSTELLUNG.md` | DE | the five open theory problems, each with statement, difficulty analysis, entry points, success criteria and time estimates |
+| `diva_mathematik.tex` | DE | self-contained mathematical development: model, Hoeffding theorem + estimator proof, empirical theorems, analytical derivations |
+| `PROBLEMSTELLUNG.md` | DE | the five open theory problems (now solved in `HERLEITUNG.md`) |
+| `HERLEITUNG.md` | DE | complete analytical derivations solving all five problems (Boltzmann equilibrium, Weingarten instability, Hoeffding $1/4$ & finite-$N$ bias, $d$-dichotomy, anchor boundary $B(x)$) |
 | `DiVa` | EN/DE | raw research log of the autonomous session |
 
-## Status and open problems
+## Status and solved theory problems
 
-The numerical program is complete. Five open theory problems remain (see
-`PROBLEMSTELLUNG.md` for precise statements):
+Both the numerical program and the analytical derivations for all five problems in `PROBLEMSTELLUNG.md` are complete (see `HERLEITUNG.md`, Section 12 of `diva_mathematik.tex`, and `verify_theory.py`):
 
-1. Prove $\zeta_1^\ast = 1/4$ (measured 0.2531 / 0.2558 at $N=512/1024$).
-2. Derive the anchor boundary function $B(x)$ (threshold $0.015$, peak $2.10$ at
-   $x^\ast\approx0.075$, slope $-1.1$).
-3. Explain the $d$-dichotomy of the marginal plateau ($d\ge4$) vs contraction ($d=2$).
-4. **Origin of $a_\sigma = 3d+k$** — the core problem; note it must be independent
-   of $D=k(d-k)$ and cannot come from linear relaxation rates ($\gamma\approx1$ is
-   universal). Weeks-to-months, may stay open.
-5. Map the $\eta$ normalization to the source-theory constant $D\,d(d{+}2)/2$
-   (blocked on that theory's precise $\eta$ definition).
+1. **$\zeta_1^\ast \to 1/4$ (solved):** Exact isotropic tangent-Gaussian identity $\zeta_1(D) = 1/4 - O(D^{-1})$ (plus compact Boltzmann tail $\zeta_1^\infty = 0.2588$ at $(2,8)$), with the $N$-trend ($0.217 \to 0.2558$) explained by the exact $O(N^{-1})$ estimator bias $-5\zeta_1^\infty/N$ of `zeta_corr`.
+2. **Anchor boundary $B(x)$ (solved):** Lower envelope of the rising branch $\varepsilon(\eta;\sigma) = x$ (from omitted `gs_orth` on the output in `phaseE2.py`, giving $x_c \approx 0.015$) and the discrete flip-instability branch $\eta R_{\mathrm{eff}} + x = 2 \Rightarrow B(x) = (2-x)/R_{\mathrm{eff}}$ ($B' \approx -1.10$, peak $B_{\max}\approx 2.10$ at $x^\ast \approx 0.075$).
+3. **$d$-dichotomy & $\eta_{\mathrm{hi}} = 2$ (solved):** Exact linearization $U_i' = (1-\eta)U_i + \eta\bar{U}$ is $(k,d)$-independent (giving $\gamma=1$ and $\eta_{\mathrm{hi}}=2$); the apparent $d$-dichotomy in `phaseG.py` arises from per-agent unit normalization on $S^{D-1}$ (disconnected for $D=1$, alignment threshold $\eta_\ast(D)=2D/(D+1)$ for $D\ge 2$).
+4. **Origin of $a_\sigma \approx 3d+k$ & F8 (solved):** Exact small-step Gibbs–Boltzmann equilibrium $\rho_N \propto \exp(\frac{a}{2N}\sum_{i,j}\mathrm{tr}(P_i P_j))$ gives $q(1-q) = d/(2a)$ ($D$ cancels identically); $a_\sigma$ is the half-plateau equilibrium $a_{1/2}^{\mathrm{eq}}(k,d)$, strictly symmetric under Grassmannian duality $k \leftrightarrow d-k$ (approximated by $3d+\min(k,d-k)$), and F8 is Kramers nucleation over the first-order barrier.
+5. **Source-theory constant $D\,d(d+2)/2$ (solved):** Exact Weingarten linear instability of the Haar state is $a_{\mathrm{lin}}(k,d) = d(d-1)(d+2)/(2D)$, which equals $d(d+2)/2$ at $k=1$; the source constant labels the linear spinodal $a_{\mathrm{lin}}$, not $\eta_{\mathrm{lo}}$ or $\eta_{\mathrm{hi}}$.
 
 ## Citation
 
