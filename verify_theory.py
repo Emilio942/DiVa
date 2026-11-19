@@ -2,23 +2,31 @@
 Theory Verification Suite for HERLEITUNG.md (Problems 1-5 of DiVa).
 
 Reproduces all analytical and numerical verification checks:
-  1. Problem 4 (k=1): exact 1D Boltzmann free energy, a_sp, a_1st, a_half_eq, a_lin,
+  1. Problem 4 (k=1): exact 1D Boltzmann free energy, a_sp, a_1st, a_lin,
      plus Kramers nucleation barrier collapse N * dF_bar(a) against V8 data (F8).
-  2. Problem 4 (general k,d): exact Grassmannian duality test (k,d) <-> (d-k,d)
-     and unmeasured predictions (1,6), (2,6) vs (5,6), (4,6) and (1,4) vs (3,4).
-  3. Problem 1: exact Boltzmann zeta_1^inf at the (2,8) edge and exact finite-N
+  2. Problem 4 (12 configs): parameter-free exact Boltzmann a_half_eq(k,d)
+     for all 12 benchmark geometries in REPORT.md.
+  3. Problem 4 (duality): unmeasured predictions (1,6),(2,6) and Grassmannian
+     duals (5,6),(4,6),(3,4) vs (1,4).
+  4. Problem 1: exact Boltzmann zeta_1^inf at the (2,8) edge and exact finite-N
      estimator bias formula against V7 data.
-  4. Problem 3: smoking-gun test on (1,3) (D=2 -> critical eta = 2D/(D+1) = 4/3)
+  5. Problem 3: smoking-gun test on (1,3) (D=2 -> critical eta = 2D/(D+1) = 4/3)
      and global vs per-agent normalization on (1,2).
-  5. Problem 2: phaseE2.py raw vs gs_orth diagnosis of epsilon(eta; sigma)
+  6. Problem 2: phaseE2.py raw vs gs_orth diagnosis of epsilon(eta; sigma)
      and flip-boundary invariant eta*R + x along V9 points.
 
-Output: results/theory_verification.json (runtime ~1 min on RTX 3060).
+Outputs:
+  - results/theory_verification.json
+  - results/figs/theory_verification.png
+Runtime: ~1.5 min on RTX 3060.
 """
 import json
 import math
 import os
 import time
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 from numpy.polynomial.legendre import leggauss
 import torch
@@ -90,6 +98,70 @@ def verify_problem4_k1_and_f8():
         df = float(dfu[idx])
         kramers.append({"d": d, "N": N, "a_meas": a_meas, "dF_bar": df, "N_dF_bar": N * df})
     return {"k1_eq": eq_summary, "f8_kramers": kramers}
+
+
+@torch.no_grad()
+def verify_problem4_12configs(device="cuda"):
+    """Parameter-free exact Boltzmann a_half_eq(k,d) for all 12 benchmark configs."""
+    torch.manual_seed(11)
+    cfgs = [
+        (1, 2, 7.00), (1, 3, 9.80), (1, 4, 13.20), (1, 5, 15.70), (1, 8, 23.90),
+        (2, 3, 10.10), (2, 4, 13.32), (2, 5, 16.20), (2, 8, 25.12),
+        (3, 6, 20.30), (3, 9, 28.60), (4, 8, 27.30),
+    ]
+    out = {}
+    for k, d, meas in cfgs:
+        M = 4096
+        Q1 = haar_Q((M, d, k), device)
+        Q2 = haar_Q((M, d, k), device)
+        sv = torch.linalg.svdvals(torch.bmm(Q1.transpose(1, 2), Q2))
+        D_dis = torch.acos(sv.clamp(-1.0, 1.0)).pow(2).sum(-1).sqrt().mean().item()
+
+        hs = torch.linspace(0.5, 4.5 * d, 80, device=device)
+        H, Mp = len(hs), 512
+        B = H * Mp
+        Q = torch.zeros(B, d, k, device=device)
+        Q[:, :k, :k] = torch.eye(k, device=device)
+        Q = gs_orth(Q + 0.1 * torch.randn(B, d, k, device=device))
+        h_vec = hs.repeat_interleave(Mp).view(B, 1, 1)
+        sigma = 0.04
+        eps = h_vec * (sigma ** 2)
+        sig_vec = torch.where(eps > 0.12, (0.12 / h_vec.clamp_min(1e-6)).sqrt(), torch.full_like(h_vec, sigma))
+        eps_vec = h_vec * (sig_vec ** 2)
+
+        for _ in range(2000):
+            P0Q = torch.zeros_like(Q)
+            P0Q[:, :k, :] = Q[:, :k, :]
+            drift = proj_tan(Q, P0Q)
+            z = proj_tan(Q, torch.randn(B, d, k, device=device))
+            Q = gs_orth(Q + eps_vec * drift + sig_vec * z)
+
+        Q = Q.reshape(H, Mp, d, k)
+        T_mean = Q[:, :, :k, :].pow(2).sum(dim=(-2, -1)).mean(dim=1)
+        q = (T_mean - k * k / d) / (k * (d - k) / d)
+        a_arr = (hs / q.clamp_min(1e-6)).cpu().numpy()
+
+        Qa, Qb = Q[:, :256], Q[:, 256:]
+        Ds = []
+        for shift in range(8):
+            Qbs = torch.roll(Qb, shifts=shift * 17, dims=1)
+            sv = torch.linalg.svdvals(torch.matmul(Qa.transpose(-1, -2), Qbs))
+            Ds.append(torch.acos(sv.clamp(-1.0, 1.0)).pow(2).sum(-1).sqrt().mean(dim=1))
+        Dr = (torch.stack(Ds).mean(0) / D_dis).cpu().numpy()
+
+        idx_sp = int(np.argmin(a_arr))
+        a_half = float("nan")
+        for i in range(idx_sp, H - 1):
+            if Dr[i] >= 0.5 > Dr[i + 1]:
+                f = (Dr[i] - 0.5) / (Dr[i] - Dr[i + 1])
+                a_half = float(a_arr[i] + f * (a_arr[i + 1] - a_arr[i]))
+                break
+        a_lin = float(d * (d - 1) * (d + 2) / (2 * k * (d - k)))
+        out[f"{k},{d}"] = {
+            "k": k, "d": d, "a_half_eq": a_half, "a_meas": meas,
+            "pred_3dk": 3 * d + k, "ratio": a_half / meas, "a_lin": a_lin,
+        }
+    return out
 
 
 @torch.no_grad()
@@ -281,28 +353,113 @@ def verify_problem2_anchors(device="cuda"):
     }
 
 
+def make_figure(out, figpath="results/figs/theory_verification.png"):
+    """Create 4-panel theory-vs-data verification summary figure."""
+    os.makedirs(os.path.dirname(figpath), exist_ok=True)
+    fig, axs = plt.subplots(2, 2, figsize=(11.5, 8.6))
+
+    # Panel A: Problem 4 - Exact Boltzmann a_half_eq vs measured + duality
+    ax = axs[0, 0]
+    p12 = out["problem4_12configs"]
+    x_eq = [v["a_half_eq"] for v in p12.values()]
+    y_m = [v["a_meas"] for v in p12.values()]
+    ax.scatter(x_eq, y_m, s=45, color="tab:blue", zorder=3, label="12 configs: Boltzmann $a_{1/2}^{\\rm eq}$")
+    du = out["problem4_duality"]
+    for (c1, c2) in [("1,6", "5,6"), ("2,6", "4,6"), ("1,4", "3,4")]:
+        ax.scatter(
+            [du[c1]["a_meas"]], [du[c2]["a_meas"]], s=60, marker="s", color="tab:red", zorder=4,
+            label="Duality $(k,d)\\leftrightarrow(d-k,d)$" if c1 == "1,6" else None,
+        )
+    ax.plot([0, 31], [0, 31], "k--", lw=1.0, label="$y = x$ (exact match)")
+    ax.set_xlim(4, 31); ax.set_ylim(4, 31)
+    ax.set_xlabel(r"Exact Boltzmann $a_{1/2}^{\rm eq}$ (or dual $a_\sigma(k,d)$)")
+    ax.set_ylabel(r"Measured $a_\sigma$ (or $a_\sigma(d-k,d)$)")
+    ax.set_title("Problem 4: Parameter-free Boltzmann law & duality")
+    ax.legend(fontsize=8, loc="upper left"); ax.grid(alpha=0.25)
+
+    # Panel B: Problem 1 - zeta_1(N) exact O(1/N) bias curve vs V7
+    ax = axs[0, 1]
+    zinfo = out["problem1_zeta1"]
+    zinf = zinfo["zeta1_inf_28"]
+    Ns = np.array([r["N"] for r in zinfo["bias_vs_V7"]])
+    zm = np.array([r["meas"] for r in zinfo["bias_vs_V7"]])
+    N_dense = np.logspace(np.log10(28), np.log10(1300), 200)
+    z_curve = zinf * (1.0 - (5 * N_dense - 8) / (N_dense * (N_dense - 1))) - 2.0 / (N_dense * (N_dense - 1))
+    ax.semilogx(N_dense, z_curve, "-", color="tab:blue", lw=2.0, label=r"Exact bias: $\zeta_1^\infty(1-\frac{5N-8}{N(N-1)})-\frac{2}{N(N-1)}$")
+    ax.semilogx(Ns, zm, "o", color="tab:red", ms=6, label="Measured V7 ($(2,8)$, edge)")
+    ax.axhline(0.25, color="gray", ls=":", lw=1.2, label=r"Gaussian limit $1/4$")
+    ax.axhline(zinf, color="tab:blue", ls="--", lw=1.0, alpha=0.7, label=f"Boltzmann $\\zeta_1^\\infty={zinf:.4f}$")
+    ax.set_xlabel("$N$ (log scale)"); ax.set_ylabel(r"$\widehat{\zeta_1}(N)$")
+    ax.set_ylim(0.205, 0.270)
+    ax.set_title(r"Problem 1: $\zeta_1^\ast\to 1/4$ & exact $O(N^{-1})$ estimator bias")
+    ax.legend(fontsize=7.5, loc="lower right"); ax.grid(alpha=0.25)
+
+    # Panel C: Problem 3 - (1,3) smoking gun & (1,2) global vs per-agent
+    ax = axs[1, 0]
+    p3 = out["problem3_dichotomy"]
+    es = np.array(p3["etas"])
+    e_line = np.linspace(0.15, 2.55, 400)
+    e_line = e_line[np.abs(e_line - 1.0) > 0.03]
+    ax.plot(e_line, np.log(np.abs(1.0 - e_line)), "k--", lw=1.0, alpha=0.7, label=r"$\ln|1-\eta|$")
+    ax.plot(es, p3["1,3_per_agent"], "o-", color="tab:orange", ms=6, label=r"$(1,3)$ per-agent ($\eta_\ast=4/3$)")
+    ax.plot(es, p3["1,2_per_agent"], "s:", color="tab:green", ms=5, label=r"$(1,2)$ per-agent ($S^0$ trapped)")
+    ax.plot(es, p3["1,2_global"], "^-", color="tab:blue", ms=5, label=r"$(1,2)$ GLOBAL norm ($\equiv 0$)")
+    ax.axvline(4.0 / 3.0, color="tab:orange", ls=":", lw=1.2)
+    ax.axvline(2.0, color="tab:red", ls=":", lw=1.2)
+    ax.set_xlabel(r"$\eta$"); ax.set_ylabel(r"$\lambda_{\rm det}$")
+    ax.set_ylim(-2.1, 0.6)
+    ax.set_title(r"Problem 3: $S^{D-1}$ normalization & $\eta_\ast(D)=2D/(D+1)$")
+    ax.legend(fontsize=7.5, loc="lower right"); ax.grid(alpha=0.25)
+
+    # Panel D: Problem 2 - Anchor boundary B(x) two-branch envelope
+    ax = axs[1, 1]
+    anc = out["problem2_anchors"]["anchored_p1"]
+    xs = np.array([r["x"] for r in anc])
+    Bs = np.array([r["B_meas"] for r in anc])
+    # Rising branch from unanchored lyap_raw(eta) = x
+    u = out["problem2_anchors"]["unanchored"]
+    ax.plot(u["lyap_raw"], u["etas"], "s--", color="tab:purple", ms=4, label=r"Rising branch $\varepsilon_{\rm raw}(\eta)=x$")
+    x_fall = np.linspace(0.05, 0.65, 100)
+    ax.plot(x_fall, (2.0 - x_fall) / 0.90, "-", color="tab:red", lw=2.0, label=r"Flip wall $B(x)=(2-x)/R_{\rm eff}$")
+    ax.plot(xs, Bs, "ko", ms=6, zorder=5, label="Measured V9 ($p_{\\rm fix}=1.0$)")
+    ax.axvline(0.015, color="gray", ls=":", lw=1.0)
+    ax.set_xlim(0.0, 0.65); ax.set_ylim(1.4, 2.3)
+    ax.set_xlabel(r"$x = \lambda_W p_{\rm fix}$"); ax.set_ylabel(r"Boundary $B(x)$")
+    ax.set_title("Problem 2: Two-branch envelope of $B(x)$")
+    ax.legend(fontsize=7.5, loc="upper right"); ax.grid(alpha=0.25)
+
+    plt.tight_layout()
+    plt.savefig(figpath, dpi=150)
+    plt.close()
+
+
 def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     t0 = time.time()
     out = {}
 
-    print("[1/5] Problem 4 (k=1 Boltzmann + F8 Kramers barrier)...")
+    print("[1/6] Problem 4 (k=1 Boltzmann + F8 Kramers barrier)...")
     out["problem4_k1_f8"] = verify_problem4_k1_and_f8()
     for row in out["problem4_k1_f8"]["f8_kramers"]:
         print(f"  d={row['d']:2d}, N={row['N']:3d}, a={row['a_meas']:5.1f} -> N*dF_bar={row['N_dF_bar']:5.2f}")
 
-    print("[2/5] Problem 4 (unmeasured points & Grassmannian duality k <-> d-k)...")
+    print("[2/6] Problem 4 (12-config exact Boltzmann table)...")
+    out["problem4_12configs"] = verify_problem4_12configs(dev)
+    for cfg, v in out["problem4_12configs"].items():
+        print(f"  ({cfg}): a_half_eq={v['a_half_eq']:5.2f} | meas={v['a_meas']:5.2f} | ratio={v['ratio']:.3f}")
+
+    print("[3/6] Problem 4 (unmeasured points & Grassmannian duality k <-> d-k)...")
     out["problem4_duality"] = verify_problem4_duality(dev)
     for cfg, v in out["problem4_duality"].items():
         print(f"  ({cfg}): a_meas={v['a_meas']:5.2f} | 3d+k={v['pred_3dk']:2d} | 3d+min(k,d-k)={v['pred_3d_mink']:2d}")
 
-    print("[3/5] Problem 1 (Boltzmann zeta_1^inf + exact finite-N bias vs V7)...")
+    print("[4/6] Problem 1 (Boltzmann zeta_1^inf + exact finite-N bias vs V7)...")
     out["problem1_zeta1"] = verify_problem1_zeta1(dev)
     print(f"  zeta1_inf(2,8) = {out['problem1_zeta1']['zeta1_inf_28']:.5f}")
     for row in out["problem1_zeta1"]["bias_vs_V7"]:
         print(f"  N={row['N']:4d}: pred={row['pred']:.4f} vs meas={row['meas']:.4f} (diff={row['diff']:+.4f})")
 
-    print("[4/5] Problem 3 ((1,3) eta*=4/3 smoking gun & (1,2) global norm)...")
+    print("[5/6] Problem 3 ((1,3) eta*=4/3 smoking gun & (1,2) global norm)...")
     out["problem3_dichotomy"] = verify_problem3_dichotomy(dev)
     for e, a, b, c in zip(
         out["problem3_dichotomy"]["etas"],
@@ -312,7 +469,7 @@ def main():
     ):
         print(f"  eta={e:4.2f}: (1,3)={a:+7.4f} | (1,2)pa={b:+7.4f} | (1,2)gl={c:+7.4f}")
 
-    print("[5/5] Problem 2 (raw vs gs_orth & flip invariant eta*R + x)...")
+    print("[6/6] Problem 2 (raw vs gs_orth & flip invariant eta*R + x)...")
     out["problem2_anchors"] = verify_problem2_anchors(dev)
     for row in out["problem2_anchors"]["anchored_p1"]:
         print(f"  x={row['x']:4.2f}, B={row['B_meas']:5.3f} -> R={row['R']:.4f}, eta*R+x={row['eta_R_plus_x']:.4f}")
@@ -320,7 +477,8 @@ def main():
     os.makedirs("results", exist_ok=True)
     with open("results/theory_verification.json", "w") as f:
         json.dump(out, f, indent=2)
-    print(f"Saved results/theory_verification.json ({time.time() - t0:.1f}s)")
+    make_figure(out, "results/figs/theory_verification.png")
+    print(f"Saved results/theory_verification.json and results/figs/theory_verification.png ({time.time() - t0:.1f}s)")
 
 
 if __name__ == "__main__":

@@ -232,6 +232,19 @@ Deterministic shape-mode decay from the exactly synchronized state (float64, mea
 
 ---
 
+## 14. Addendum (2026-11-19): Analytical Resolution & Errata
+
+All five open theory problems raised above and in `PROBLEMSTELLUNG.md` have now been solved analytically in `HERLEITUNG.md` (and Section 12 of `diva_mathematik.tex`), with standalone verification in `verify_theory.py` (`results/theory_verification.json`, `results/figs/theory_verification.png`). Key theoretical conclusions and three corrections to earlier interpretations in §4–6:
+
+1. **Exact Boltzmann equilibrium (Problems 4 & 5):** In the small-step limit ($\eta,\sigma^2\to 0$, $a=\eta/\sigma^2$ fixed, $\lambda_W=0$), the discrete map is exact overdamped Langevin dynamics with Gibbs–Boltzmann equilibrium $\rho_N \propto \exp(\frac{a}{2N}\sum_{i,j}\mathrm{tr}(P_i P_j))$. The linear instability of the disordered Haar state is $a_{\mathrm{lin}}(k,d) = d(d-1)(d+2)/(2D)$ (explaining $d(d+2)/2$ at $k=1$), whereas $\eta_{\mathrm{lo}}$ is the half-plateau equilibrium $a_{1/2}^{\mathrm{eq}}(k,d)$ governed by $q(1-q)=d/(2a)$ (independent of $D$). Grassmannian duality $P\mapsto I-P$ enforces $a_\sigma(k,d)=a_\sigma(d-k,d)$ — verified directly on $(1,6)\cong(5,6)$, $(2,6)\cong(4,6)$, and $(1,4)\cong(3,4)$ — so the linear approximation is $3d+\min(k,d-k)$. The large-$d$ breakdown in V8 is Kramers nucleation $N\Delta F_{\mathrm{bar}}(a)=C(d,T)$ over the first-order barrier.
+2. **Erratum to §6 ($\zeta_1$ in the ordered phase; Problem 1):** In any *noise-sustained* ordered cloud ($\sigma>0$), $\zeta_1$ does **not** vanish; tangent-space Gaussianity gives the scale-invariant identity $\zeta_1(D) = 1/4 - O(D^{-1})$ (and $\zeta_1^\infty\approx 0.2588$ at the $(2,8)$ Boltzmann edge), explaining why anchored ordered clouds also exhibit $\zeta_1\approx 0.23$. The $N$-trend in V7 ($0.217\to 0.2558$) is the exact $O(N^{-1})$ finite-sample bias $\E[\widehat{\zeta_1}(N)] = \zeta_1^\infty(1 - \frac{5N-8}{N(N-1)}) - \frac{2}{N(N-1)}$ of `zeta_corr`.
+3. **Erratum to §4 & §5 ($\kappa$ slope, $d$-dichotomy, and $B(x)$; Problems 2 & 3):**
+   - In §4, the measured anchor stabilization values in `phaseE2_lyapdet.json` ($-0.021, -0.050, -0.116, -0.095$ at $x=0.025, 0.05, 0.10, 0.10$) correspond to $\lambda_0 = \ln(1-x) \approx -1.0\,x$, not $-2.3\,x$.
+   - The true deterministic Jacobian at the synchronized state is $(k,d)$-independent ($U_i'=(1-\eta)U_i+\eta\bar U$, giving $\gamma=1$ and $\eta_{\mathrm{hi}}=2$). The $d=2$ vs $d\ge 4$ dichotomy in §5 (`phaseG.py`) arises from per-agent unit normalization on $S^{D-1}$ (disconnected $S^0$ for $D=1$; alignment threshold $\eta_\ast(D)=2D/(D+1)$ for $D\ge 2$).
+   - The rising branch and threshold $x_c\approx 0.015$ of $B(x)$ in V9 arise from omitting `gs_orth` on `(Qp3+inc2)` and `(Qn+inc1)` in `phaseE2.py`, while the falling branch ($B'\approx -1.1$) is the discrete flip-instability wall $\eta R_{\mathrm{eff}} + x = 2 \Rightarrow B(x)=(2-x)/R_{\mathrm{eff}}$ (present even at $p=1$, refuting $\lambda_W^2 p(1-p)$ heating).
+
+---
+
 ## 14. CORRECTIONS (post-derivation, see HERLEITUNG.md + verify_theory.py)
 
 The analytic derivation (`HERLEITUNG.md`) and its verification suite

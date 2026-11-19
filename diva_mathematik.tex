@@ -15,6 +15,7 @@
 \newtheorem{satz}{Satz}
 \newtheorem{lemma}[satz]{Lemma}
 \newtheorem{korollar}[satz]{Korollar}
+\newtheorem{folgerung}[satz]{Folgerung}
 \newtheorem{definition}[satz]{Definition}
 \newtheorem{befund}{Empirischer Befund}
 \newtheorem{vermutung}{Offenes Problem}
@@ -750,8 +751,10 @@ Gram--Schmidt-Orthonormalisierung, elementweise Parameter, exakte
 Hauptwinkel-SVD, Hoeffding-Maschine nach Korollar~\ref{kor:zeta},
 deterministischer Differenzen-Exponent nach
 Definition~\ref{def:ladet}). Messskripte \texttt{phaseA--I*.py},
-\texttt{V1\_robustness.py}; Rohdaten \texttt{results/*.json}; Figuren in
-\texttt{results/figs/}. Gesamt-GPU-Aufwand der dokumentierten Messungen:
-$\approx1$~h auf einer RTX~3060.
+\texttt{V1\_robustness.py} sowie \texttt{verify\_theory.py} (Verifikation aller
+analytischen Herleitungen aus Abschnitt~\ref{sec:herleitung} und
+\texttt{HERLEITUNG.md}); Rohdaten \texttt{results/*.json}; Figuren in
+\texttt{results/figs/}. Gesamt-GPU-Aufwand: $\approx1$~h für das numerische
+Programm plus $\approx1$~min für \texttt{verify\_theory.py} auf einer RTX~3060.
 
 \end{document}
