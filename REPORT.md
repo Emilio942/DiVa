@@ -245,7 +245,7 @@ All five open theory problems raised above and in `PROBLEMSTELLUNG.md` have now 
 
 ---
 
-## 14. CORRECTIONS (post-derivation, see HERLEITUNG.md + verify_theory.py)
+## 15. CORRECTIONS (post-derivation, see HERLEITUNG.md + verify_theory.py)
 
 The analytic derivation (`HERLEITUNG.md`) and its verification suite
 (`verify_theory.py`, `results/theory_verification.json`) supersede four statements
